@@ -4,32 +4,33 @@ const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const ADMIN_PASSWORD = process.env.SUPERUSER_PASSWORD || "admin123";
 
-// Middleware
 app.use(cors());
 app.use(bodyParser.json());
 
-// In-Memory Data Stores
+// In-memory storage (Resets on restart - for production use a database like MongoDB or Redis)
 let activeUsers = new Set();
-let bannedUsers = ["example_cheater"]; // Pre-populate for testing
-let u2sdList = ["untrusted_user1"];    // Users marked for self-destruct
-let currentTargets = ["target_player_01"];
-let userInstructions = "Wait for command";
+let bannedUsers = new Set();
+let u2sdUsers = new Set();
+let targets = [];
 
-// Secret password for the mod handshake
-const MOD_PASSWORD = process.env.MOD_PASSWORD || "chunky-security-2024";
+// ── AUTH ENDPOINT ────────────────────────────────────────────────────────────
 
-// --- 1. Authentication Handshake ---
 app.post('/api/check', (req, res) => {
     const { password } = req.body;
-    if (password === MOD_PASSWORD) {
-        return res.status(200).json({ success: true });
+    if (password === ADMIN_PASSWORD) {
+        res.json({ success: true });
+    } else {
+        res.status(401).json({ success: false, message: "Invalid password" });
     }
-    res.status(401).json({ success: false, message: "Invalid credentials" });
 });
 
-// --- 2. Presence & Active Users ---
-app.get('/api/active-users', (req, res) => res.json(Array.from(activeUsers)));
+// ── ACTIVE USERS ─────────────────────────────────────────────────────────────
+
+app.get('/api/active-users', (req, res) => {
+    res.json(Array.from(activeUsers));
+});
 
 app.patch('/api/active-users', (req, res) => {
     const { add, remove } = req.body;
@@ -38,52 +39,64 @@ app.patch('/api/active-users', (req, res) => {
     res.json({ success: true, count: activeUsers.size });
 });
 
-// --- 3. Targeting ---
+// ── BANNED USERS ─────────────────────────────────────────────────────────────
+
+app.get('/api/banned-users', (req, res) => {
+    res.json(Array.from(bannedUsers));
+});
+
+app.post('/api/banned-users', (req, res) => {
+    const { user } = req.body;
+    if (user) bannedUsers.add(user);
+    res.json({ success: true });
+});
+
+app.delete('/api/banned-users', (req, res) => {
+    const { user } = req.body;
+    if (user) bannedUsers.delete(user);
+    res.json({ success: true });
+});
+
+// ── U2SD LIST (Termination) ──────────────────────────────────────────────────
+
+app.get('/api/u2sd', (req, res) => {
+    res.json(Array.from(u2sdUsers));
+});
+
+app.post('/api/u2sd', (req, res) => {
+    const { user } = req.body;
+    if (user) u2sdUsers.add(user);
+    res.json({ success: true });
+});
+
+app.delete('/api/u2sd', (req, res) => {
+    const { user } = req.body;
+    if (user) u2sdUsers.delete(user);
+    res.json({ success: true });
+});
+
+// ── TARGETS ──────────────────────────────────────────────────────────────────
+
 app.get('/api/user-target', (req, res) => {
-    res.json({ targets: currentTargets });
+    res.json(targets);
 });
 
 app.post('/api/user-target', (req, res) => {
     const { target } = req.body;
-    if (target) currentTargets.push(target);
-    res.json(currentTargets);
-});
-
-// --- 4. Security Lists (Banned & U2SD) ---
-// Generic handler for list management
-const manageList = (list) => ({
-    get: (req, res) => res.json(list),
-    post: (req, res) => {
-        const { user } = req.body;
-        if (user && !list.includes(user)) list.push(user);
-        res.json(list);
-    },
-    delete: (req, res) => {
-        const { user } = req.body;
-        const index = list.indexOf(user);
-        if (index > -1) list.splice(index, 1);
-        res.json(list);
-    }
-});
-
-app.route('/api/banned-users')
-    .get(manageList(bannedUsers).get)
-    .post(manageList(bannedUsers).post)
-    .delete(manageList(bannedUsers).delete);
-
-app.route('/api/u2sd')
-    .get(manageList(u2sdList).get)
-    .post(manageList(u2sdList).post)
-    .delete(manageList(u2sdList).delete);
-
-// --- 5. Instructions ---
-app.get('/api/user-instructions', (req, res) => res.json({ instruction: userInstructions }));
-app.post('/api/user-instructions', (req, res) => {
-    userInstructions = req.body.instruction || userInstructions;
+    if (target) targets.push(target);
     res.json({ success: true });
 });
 
-// Start Server
+app.patch('/api/user-target', (req, res) => {
+    const { clear, set } = req.body;
+    if (clear) targets = [];
+    if (set) targets = set;
+    res.json({ success: true });
+});
+
+// ── START SERVER ─────────────────────────────────────────────────────────────
+
 app.listen(PORT, () => {
-    console.log(`Railway Management Server running on port ${PORT}`);
+    console.log(`ChunkLoader Auth Server running on port ${PORT}`);
+    console.log(`Admin Password is set via environment variable.`);
 });
